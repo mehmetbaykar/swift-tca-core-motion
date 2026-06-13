@@ -14,11 +14,11 @@ concurrency:
 jobs:
   package-tests:
     name: Package tests
-    runs-on: macos-15
+    runs-on: macos-26
     strategy:
       matrix:
         xcode:
-          - '16.4'
+          - '26.3'
     steps:
       - uses: actions/checkout@v5
       - name: Select Xcode ${{ matrix.xcode }}
@@ -28,11 +28,11 @@ jobs:
 
   example-tests:
     name: Example tests
-    runs-on: macos-15
+    runs-on: macos-26
     strategy:
       matrix:
         xcode:
-          - '16.4'
+          - '26.3'
     steps:
       - uses: actions/checkout@v5
       - name: Select Xcode ${{ matrix.xcode }}
