@@ -1,26 +1,35 @@
-PLATFORM_IOS = iOS Simulator,name=iPhone 11 Pro Max
-PLATFORM_MACOS = macOS
-PLATFORM_WATCHOS = watchOS Simulator,name=Apple Watch Series 4 - 44mm
+PLATFORM_IOS_ID = $(shell xcrun simctl list --json devices available iPhone | jq -r '[.devices | to_entries | sort_by(.key) | reverse | .[].value | select(length > 0) | .[0]][0].udid')
+PLATFORM_IOS = iOS Simulator,id=$(PLATFORM_IOS_ID)
 
 default: test
 
-test:
-	xcodebuild test \
-		-scheme ComposableCoreMotion \
-		-destination platform="$(PLATFORM_IOS)"
-	xcodebuild test \
-		-scheme ComposableCoreMotion \
-		-destination platform="$(PLATFORM_MACOS)"
-	xcodebuild \
-		-scheme ComposableCoreMotion_watchOS \
-		-destination platform="$(PLATFORM_WATCHOS)"
-	cd Examples/MotionManager \
+test: package-test example-test
+
+package-test:
+	swift test
+
+example-generate:
+	cd Examples \
+		&& tuist install \
+		&& tuist generate --no-open
+
+example-test: example-generate
+	cd Examples \
 		&& xcodebuild test \
+		-workspace MotionManager.xcworkspace \
 		-scheme MotionManager \
-		-destination platform="$(PLATFORM_IOS)"
+		-configuration Debug \
+		-destination "platform=$(PLATFORM_IOS)" \
+		-derivedDataPath DerivedDataTuist \
+		CODE_SIGNING_ALLOWED=NO \
+		-quiet
 
 format:
-	swift format --in-place --recursive \
-		./Examples ./Package.swift ./Sources ./Tests
+	find . \
+		-name '*.swift' \
+		-not -path '*/.*' \
+		-not -path './updated-repos/*' \
+		-print0 \
+		| xargs -0 xcrun swift-format --ignore-unparsable-files --in-place
 
-.PHONY: format test
+.PHONY: example-generate example-test format package-test test

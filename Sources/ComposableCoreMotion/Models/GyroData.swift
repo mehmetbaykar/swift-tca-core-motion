@@ -4,7 +4,7 @@
   /// A single measurement of the device's rotation rate.
   ///
   /// See the documentation for `CMGyroData` for more info.
-  public struct GyroData: Hashable {
+  public struct GyroData: Hashable, @unchecked Sendable {
     public var rotationRate: CMRotationRate
     public var timestamp: TimeInterval
 

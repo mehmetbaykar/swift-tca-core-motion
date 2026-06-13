@@ -4,7 +4,7 @@
   /// Encapsulated measurements of the attitude, rotation rate, and acceleration of a device.
   ///
   /// See the documentation for `CMDeviceMotion` for more info.
-  public struct DeviceMotion: Hashable {
+  public struct DeviceMotion: Hashable, @unchecked Sendable {
     public var attitude: Attitude
     public var gravity: CMAcceleration
     public var heading: Double

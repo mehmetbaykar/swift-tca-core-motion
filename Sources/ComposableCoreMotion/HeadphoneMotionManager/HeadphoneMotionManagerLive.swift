@@ -1,7 +1,7 @@
-#if compiler(>=5.3) && (os(iOS) || os(watchOS) || targetEnvironment(macCatalyst))
-  import Combine
+#if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
   import ComposableArchitecture
   import CoreMotion
+  import Foundation
 
   @available(iOS 14, *)
   @available(macCatalyst 14, *)
@@ -11,13 +11,14 @@
   extension HeadphoneMotionManager {
     public static let live = HeadphoneMotionManager(
       create: { id in
-        Effect.run { subscriber in
-          if dependencies[id] != nil {
+        let id = HeadphoneMotionID(id)
+        return AsyncStream { continuation in
+          if headphoneDependencies.withValue({ $0[id] != nil }) {
             assertionFailure(
               """
-              You are attempting to create a headphone motion manager with the id \(id), but there \
-              is already a running manager with that id. This is considered a programmer error \
-              since you may be accidentally overwriting an existing manager without knowing.
+              You are attempting to create a headphone motion manager with the id \(id.rawValue), \
+              but there is already a running manager with that id. This is considered a programmer \
+              error since you may be accidentally overwriting an existing manager without knowing.
 
               To fix you should either destroy the existing manager before creating a new one, or \
               you should not try creating a new one before this one is destroyed.
@@ -25,105 +26,147 @@
           }
 
           let manager = CMHeadphoneMotionManager()
-          var delegate = Delegate(subscriber)
+          let delegate = Delegate(continuation)
           manager.delegate = delegate
 
-          dependencies[id] = Dependencies(
-            delegate: delegate,
-            manager: manager,
-            subscriber: subscriber
+          let dependency = UncheckedSendable(
+            Dependencies(
+              delegate: delegate,
+              manager: manager,
+              continuation: continuation
+            )
           )
 
-          return AnyCancellable {
-            dependencies[id] = nil
+          headphoneDependencies.withValue {
+            $0[id] = dependency
+          }
+
+          continuation.onTermination = { _ in
+            headphoneDependencies.withValue { $0[id] = nil }
           }
         }
       },
       destroy: { id in
-        .fireAndForget { dependencies[id] = nil }
+        let id = HeadphoneMotionID(id)
+        headphoneDependencies.withValue { $0[id] = nil }
       },
       deviceMotion: { id in
-        requireHeadphoneMotionManager(id: id)?.deviceMotion.map(DeviceMotion.init)
+        requireHeadphoneMotionManager(id: HeadphoneMotionID(id))?.value.deviceMotion.map(
+          DeviceMotion.init)
       },
       isDeviceMotionActive: { id in
-        requireHeadphoneMotionManager(id: id)?.isDeviceMotionActive ?? false
+        requireHeadphoneMotionManager(id: HeadphoneMotionID(id))?.value.isDeviceMotionActive
+          ?? false
       },
       isDeviceMotionAvailable: { id in
-        requireHeadphoneMotionManager(id: id)?.isDeviceMotionAvailable ?? false
+        requireHeadphoneMotionManager(id: HeadphoneMotionID(id))?.value.isDeviceMotionAvailable
+          ?? false
       },
       startDeviceMotionUpdates: { id, queue in
-        return Effect.run { subscriber in
+        let id = HeadphoneMotionID(id)
+        return AsyncThrowingStream<DeviceMotion, any Error> { continuation in
           guard let manager = requireHeadphoneMotionManager(id: id)
           else {
-            couldNotFindHeadphoneMotionManager(id: id)
-            return AnyCancellable {}
+            continuation.finish()
+            return
           }
-          guard deviceMotionUpdatesSubscribers[id] == nil
-          else { return AnyCancellable {} }
+          guard headphoneDeviceMotionContinuations.insert(continuation, for: id)
+          else {
+            continuation.finish()
+            return
+          }
 
-          deviceMotionUpdatesSubscribers[id] = subscriber
-          manager.startDeviceMotionUpdates(to: queue) { data, error in
-            if let data = data {
-              subscriber.send(.init(data))
-            } else if let error = error {
-              subscriber.send(completion: .failure(error))
+          manager.value.startDeviceMotionUpdates(to: queue) { data, error in
+            if let data {
+              continuation.yield(.init(data))
+            } else if let error {
+              continuation.finish(throwing: error)
             }
           }
-          return AnyCancellable {
-            manager.stopDeviceMotionUpdates()
+          continuation.onTermination = { _ in
+            manager.value.stopDeviceMotionUpdates()
+            headphoneDeviceMotionContinuations.removeValue(for: id)
           }
         }
       },
       stopDeviceMotionUpdates: { id in
-        .fireAndForget {
-          guard let manager = requireHeadphoneMotionManager(id: id)
-          else {
-            couldNotFindHeadphoneMotionManager(id: id)
-            return
-          }
-          manager.stopDeviceMotionUpdates()
-          deviceMotionUpdatesSubscribers[id]?.send(completion: .finished)
-          deviceMotionUpdatesSubscribers[id] = nil
-        }
+        let id = HeadphoneMotionID(id)
+        guard let manager = requireHeadphoneMotionManager(id: id)?.value
+        else { return }
+        manager.stopDeviceMotionUpdates()
+        headphoneDeviceMotionContinuations.removeValue(for: id)?.finish()
       }
     )
+  }
 
-    private class Delegate: NSObject, CMHeadphoneMotionManagerDelegate {
-      let subscriber: Effect<HeadphoneMotionManager.Action, Never>.Subscriber
+  private struct HeadphoneMotionID: Hashable, @unchecked Sendable {
+    let rawValue: AnyHashable
 
-      init(_ subscriber: Effect<HeadphoneMotionManager.Action, Never>.Subscriber) {
-        self.subscriber = subscriber
-      }
-
-      func headphoneMotionManagerDidConnect(_ manager: CMHeadphoneMotionManager) {
-        self.subscriber.send(.didConnect)
-      }
-
-      func headphoneMotionManagerDidDisconnect(_ manager: CMHeadphoneMotionManager) {
-        self.subscriber.send(.didDisconnect)
-      }
-    }
-
-    private struct Dependencies {
-      let delegate: Delegate
-      let manager: CMHeadphoneMotionManager
-      let subscriber: Effect<HeadphoneMotionManager.Action, Never>.Subscriber
-    }
-
-    private static var dependencies: [AnyHashable: Dependencies] = [:]
-
-    private static func requireHeadphoneMotionManager(id: AnyHashable)
-      -> CMHeadphoneMotionManager?
-    {
-      if dependencies[id] == nil {
-        couldNotFindHeadphoneMotionManager(id: id)
-      }
-      return dependencies[id]?.manager
+    init(_ rawValue: AnyHashable) {
+      self.rawValue = rawValue
     }
   }
 
-  private var deviceMotionUpdatesSubscribers:
-    [AnyHashable: Effect<DeviceMotion, Error>.Subscriber] = [:]
+  private final class Delegate: NSObject, CMHeadphoneMotionManagerDelegate {
+    let continuation: AsyncStream<HeadphoneMotionManager.Action>.Continuation
+
+    init(_ continuation: AsyncStream<HeadphoneMotionManager.Action>.Continuation) {
+      self.continuation = continuation
+    }
+
+    func headphoneMotionManagerDidConnect(_ manager: CMHeadphoneMotionManager) {
+      continuation.yield(.didConnect)
+    }
+
+    func headphoneMotionManagerDidDisconnect(_ manager: CMHeadphoneMotionManager) {
+      continuation.yield(.didDisconnect)
+    }
+  }
+
+  private struct Dependencies {
+    let delegate: Delegate
+    let manager: CMHeadphoneMotionManager
+    let continuation: AsyncStream<HeadphoneMotionManager.Action>.Continuation
+  }
+
+  private let headphoneDependencies =
+    LockIsolated<[HeadphoneMotionID: UncheckedSendable<Dependencies>]>([:])
+  private let headphoneDeviceMotionContinuations =
+    HeadphoneMotionContinuationStore<DeviceMotion>()
+
+  private final class HeadphoneMotionContinuationStore<Value>: @unchecked Sendable {
+    private let continuations =
+      LockIsolated<[HeadphoneMotionID: AsyncThrowingStream<Value, any Error>.Continuation]>([:])
+
+    func insert(
+      _ continuation: AsyncThrowingStream<Value, any Error>.Continuation,
+      for id: HeadphoneMotionID
+    ) -> Bool {
+      continuations.withValue {
+        guard $0[id] == nil else { return false }
+        $0[id] = continuation
+        return true
+      }
+    }
+
+    @discardableResult
+    func removeValue(
+      for id: HeadphoneMotionID
+    ) -> AsyncThrowingStream<Value, any Error>.Continuation? {
+      continuations.withValue { $0.removeValue(forKey: id) }
+    }
+  }
+
+  private func requireHeadphoneMotionManager(
+    id: HeadphoneMotionID
+  ) -> UncheckedSendable<CMHeadphoneMotionManager>? {
+    let dependency = headphoneDependencies.withValue { $0[id] }
+    let manager = dependency.map { UncheckedSendable($0.value.manager) }
+    if manager == nil {
+      couldNotFindHeadphoneMotionManager(id: id.rawValue)
+    }
+    return manager
+  }
 
   private func couldNotFindHeadphoneMotionManager(id: Any) {
     assertionFailure(

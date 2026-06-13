@@ -1,5 +1,12 @@
 .DS_Store
 /.build
+/Derived
 /Packages
 /*.xcodeproj
+Examples/.build
+Examples/Derived
+Examples/DerivedDataTuist
+Examples/*.xcodeproj
+Examples/*.xcworkspace
+Examples/Tuist/.build
 xcuserdata/

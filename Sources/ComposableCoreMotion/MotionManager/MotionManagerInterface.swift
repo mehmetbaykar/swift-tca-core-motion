@@ -1,177 +1,16 @@
 import ComposableArchitecture
 import CoreMotion
+import Foundation
 
 /// A wrapper around Core Motion's `CMMotionManager` that exposes its functionality through
-/// effects and actions, making it easy to use with the Composable Architecture, and easy to test.
-///
-/// To use in your application, you can add an action to your feature's domain that represents the
-/// type of motion data you are interested in receiving. For example, if you only want motion
-/// updates, then you can add the following action:
-///
-///     import ComposableCoreLocation
-///
-///     enum FeatureAction {
-///       case motionUpdate(Result<DeviceMotion, NSError>)
-///
-///       // Your feature's other actions:
-///       ...
-///     }
-///
-/// This action will be sent every time the motion manager receives new device motion data.
-///
-/// Next, add a `MotionManager` type, which is a wrapper around a `CMMotionManager` that this
-/// library provides, to your feature's environment of dependencies:
-///
-///     struct FeatureEnvironment {
-///       var motionManager: MotionManager
-///
-///       // Your feature's other dependencies:
-///       ...
-///     }
-///
-/// Then, create a motion manager by returning an effect from our reducer. You can either do this
-/// when your feature starts up, such as when `onAppear` is invoked, or you can do it when a user
-/// action occurs, such as when the user taps a button.
-///
-/// As an example, say we want to create a motion manager and start listening for motion updates
-/// when a "Record" button is tapped. Then we can can do both of those things by executing two
-/// effects, one after the other:
-///
-///     let featureReducer = Reducer<FeatureState, FeatureAction, FeatureEnvironment> {
-///       state, action, environment in
-///
-///       // A unique identifier for our location manager, just in case we want to use
-///       // more than one in our application.
-///       struct MotionManagerId: Hashable {}
-///
-///       switch action {
-///       case .recordingButtonTapped:
-///         return .concatenate(
-///           environment.motionManager
-///             .create(id: MotionManagerId())
-///             .fireAndForget(),
-///
-///           environment.motionManager
-///             .startDeviceMotionUpdates(
-///               id: MotionManagerId(),
-///               using: .xArbitraryZVertical,
-///               to: .main
-///             )
-///             .mapError { $0 as NSError }
-///             .catchToEffect()
-///             .map(AppAction.motionUpdate)
-///         )
-///
-///       ...
-///       }
-///     }
-///
-/// After those effects are executed you will get a steady stream of device motion updates sent to
-/// the `.motionUpdate` action, which you can handle in the reducer. For example, to compute how
-/// much the device is moving up and down we can take the dot product of the device's gravity
-/// vector with the device's acceleration vector, and we could store that in the feature's state:
-///
-///     case let .motionUpdate(.success(deviceMotion)):
-///        state.zs.append(
-///          motion.gravity.x * motion.userAcceleration.x
-///            + motion.gravity.y * motion.userAcceleration.y
-///            + motion.gravity.z * motion.userAcceleration.z
-///        )
-///
-///     case let .motionUpdate(.failure(error)):
-///       // Do something with the motion update failure, like show an alert.
-///
-/// And then later, if you want to stop receiving motion updates, such as when a "Stop" button is
-/// tapped, we can execute an effect to stop the motion manager, and even fully destroy it if we
-/// don't need the manager anymore:
-///
-///     case .stopButtonTapped:
-///       return .concatenate(
-///         environment.motionManager
-///           .stopDeviceMotionUpdates(id: MotionManagerId())
-///           .fireAndForget(),
-///
-///         environment.motionManager
-///           .destroy(id: MotionManagerId())
-///           .fireAndForget()
-///       )
-///
-/// That is enough to implement a basic application that interacts with Core Motion.
-///
-/// But the true power of building your application and interfacing with Core Motion this way is
-/// the ability to instantly _test_ how your application behaves with Core Motion. We start by
-/// creating a `TestStore` whose environment contains an `.unimplemented` version of the
-/// `MotionManager`. The `.unimplemented` function allows you to create a fully controlled version
-/// of the motion manager that does not deal with a real `CMMotionManager` at all. Instead, you
-/// override whichever endpoints your feature needs to supply deterministic functionality.
-///
-/// For example, let's test that we property start the motion manager when we tap the record
-/// button, and that we compute the z-motion correctly, and further that we stop the motion
-/// manager when we tap the stop button. We can construct a `TestStore` with a mock motion manager
-/// that keeps track of when the manager is created and destroyed, and further we can even
-/// substitute in a subject that we control for device motion updates. This allows us to send any
-/// data we want to for the device motion.
-///
-///     func testFeature() {
-///       let motionSubject = PassthroughSubject<DeviceMotion, Error>()
-///       var motionManagerIsLive = false
-///
-///       let store = TestStore(
-///         initialState: .init(),
-///         reducer: appReducer,
-///         environment: .init(
-///           motionManager: .unimplemented(
-///             create: { _ in .fireAndForget { motionManagerIsLive = true } },
-///             destroy: { _ in .fireAndForget { motionManagerIsLive = false } },
-///             startDeviceMotionUpdates: { _, _, _ in motionSubject.eraseToEffect() },
-///             stopDeviceMotionUpdates: { _ in
-///               .fireAndForget { motionSubject.send(completion: .finished) }
-///             }
-///           )
-///         )
-///       )
-///     }
-///
-/// We can then make an assertion on our store that plays a basic user script. We can simulate the
-/// situation in which a user taps the record button, then some device motion data is received,
-/// and finally the user taps the stop button. During that script of user actions we expect the
-/// motion manager to be started, then for some z-motion values to be accumulated, and finally for
-/// the motion manager to be stopped:
-///
-///     let deviceMotion = DeviceMotion(
-///       attitude: .init(quaternion: .init(x: 1, y: 0, z: 0, w: 0)),
-///       gravity: CMAcceleration(x: 1, y: 2, z: 3),
-///       heading: 0,
-///       magneticField: .init(field: .init(x: 0, y: 0, z: 0), accuracy: .high),
-///       rotationRate: .init(x: 0, y: 0, z: 0),
-///       timestamp: 0,
-///       userAcceleration: CMAcceleration(x: 4, y: 5, z: 6)
-///     )
-///
-///     store.assert(
-///       .send(.recordingButtonTapped) {
-///         XCTAssertEqual(motionManagerIsLive, true)
-///       },
-///       .do { motionSubject.send(deviceMotion) },
-///       .receive(.motionUpdate(.success(deviceMotion))) {
-///         $0.zs = [32]
-///       },
-///       .send(.stopButtonTapped) {
-///         XCTAssertEqual(motionManagerIsLive, false)
-///       }
-///     )
-///
-/// This is only the tip of the iceberg. We can access any part of the `CMMotionManager` API in
-/// this way, and instantly unlock testability with how the motion functionality integrates with
-/// our core application logic. This can be incredibly powerful, and is typically not the kind of
-/// thing one can test easily.
-///
+/// async operations and streams, making it easy to use with the Composable Architecture and easy
+/// to test.
 @available(iOS 4.0, *)
 @available(macCatalyst 13.0, *)
 @available(macOS, unavailable)
 @available(tvOS, unavailable)
 @available(watchOS 2.0, *)
-public struct MotionManager {
+public struct MotionManager: Sendable {
   /// The latest sample of accelerometer data.
   public func accelerometerData(id: AnyHashable) -> AccelerometerData? {
     self.accelerometerData(id)
@@ -187,16 +26,16 @@ public struct MotionManager {
   ///
   /// A motion manager must be first created before you can use its functionality, such as starting
   /// device motion updates or accessing data directly from the manager.
-  public func create(id: AnyHashable) -> Effect<Never, Never> {
-    self.create(id)
+  public func create(id: AnyHashable) async {
+    await self.create(id)
   }
 
   /// Destroys a currently running motion manager.
   ///
   /// In is good practice to destroy a motion manager once you are done with it, such as when you
   /// leave a screen or no longer need motion data.
-  public func destroy(id: AnyHashable) -> Effect<Never, Never> {
-    self.destroy(id)
+  public func destroy(id: AnyHashable) async {
+    await self.destroy(id)
   }
 
   /// The latest sample of device-motion data.
@@ -263,8 +102,8 @@ public struct MotionManager {
     gyroUpdateInterval: TimeInterval? = nil,
     magnetometerUpdateInterval: TimeInterval? = nil,
     showsDeviceMovementDisplay: Bool? = nil
-  ) -> Effect<Never, Never> {
-    self.set(
+  ) async {
+    await self.set(
       id,
       .init(
         accelerometerUpdateInterval: accelerometerUpdateInterval,
@@ -283,7 +122,7 @@ public struct MotionManager {
   public func startAccelerometerUpdates(
     id: AnyHashable,
     to queue: OperationQueue = .main
-  ) -> Effect<AccelerometerData, Error> {
+  ) -> AsyncThrowingStream<AccelerometerData, any Error> {
     self.startAccelerometerUpdates(id, queue)
   }
 
@@ -295,7 +134,7 @@ public struct MotionManager {
     id: AnyHashable,
     using referenceFrame: CMAttitudeReferenceFrame,
     to queue: OperationQueue = .main
-  ) -> Effect<DeviceMotion, Error> {
+  ) -> AsyncThrowingStream<DeviceMotion, any Error> {
     self.startDeviceMotionUpdates(id, referenceFrame, queue)
   }
 
@@ -306,7 +145,7 @@ public struct MotionManager {
   public func startGyroUpdates(
     id: AnyHashable,
     to queue: OperationQueue = .main
-  ) -> Effect<GyroData, Error> {
+  ) -> AsyncThrowingStream<GyroData, any Error> {
     self.startGyroUpdates(id, queue)
   }
 
@@ -317,61 +156,67 @@ public struct MotionManager {
   public func startMagnetometerUpdates(
     id: AnyHashable,
     to queue: OperationQueue = .main
-  ) -> Effect<MagnetometerData, Error> {
+  ) -> AsyncThrowingStream<MagnetometerData, any Error> {
     self.startMagnetometerUpdates(id, queue)
   }
 
   /// Stops accelerometer updates.
-  public func stopAccelerometerUpdates(id: AnyHashable) -> Effect<Never, Never> {
-    self.stopAccelerometerUpdates(id)
+  public func stopAccelerometerUpdates(id: AnyHashable) async {
+    await self.stopAccelerometerUpdates(id)
   }
 
   /// Stops device-motion updates.
-  public func stopDeviceMotionUpdates(id: AnyHashable) -> Effect<Never, Never> {
-    self.stopDeviceMotionUpdates(id)
+  public func stopDeviceMotionUpdates(id: AnyHashable) async {
+    await self.stopDeviceMotionUpdates(id)
   }
 
   /// Stops gyroscope updates.
-  public func stopGyroUpdates(id: AnyHashable) -> Effect<Never, Never> {
-    self.stopGyroUpdates(id)
+  public func stopGyroUpdates(id: AnyHashable) async {
+    await self.stopGyroUpdates(id)
   }
 
   /// Stops magnetometer updates.
-  public func stopMagnetometerUpdates(id: AnyHashable) -> Effect<Never, Never> {
-    self.stopMagnetometerUpdates(id)
+  public func stopMagnetometerUpdates(id: AnyHashable) async {
+    await self.stopMagnetometerUpdates(id)
   }
 
   public init(
-    accelerometerData: @escaping (AnyHashable) -> AccelerometerData?,
-    attitudeReferenceFrame: @escaping (AnyHashable) -> CMAttitudeReferenceFrame,
-    availableAttitudeReferenceFrames: @escaping () -> CMAttitudeReferenceFrame,
-    create: @escaping (AnyHashable) -> Effect<Never, Never>,
-    destroy: @escaping (AnyHashable) -> Effect<Never, Never>,
-    deviceMotion: @escaping (AnyHashable) -> DeviceMotion?,
-    gyroData: @escaping (AnyHashable) -> GyroData?,
-    isAccelerometerActive: @escaping (AnyHashable) -> Bool,
-    isAccelerometerAvailable: @escaping (AnyHashable) -> Bool,
-    isDeviceMotionActive: @escaping (AnyHashable) -> Bool,
-    isDeviceMotionAvailable: @escaping (AnyHashable) -> Bool,
-    isGyroActive: @escaping (AnyHashable) -> Bool,
-    isGyroAvailable: @escaping (AnyHashable) -> Bool,
-    isMagnetometerActive: @escaping (AnyHashable) -> Bool,
-    isMagnetometerAvailable: @escaping (AnyHashable) -> Bool,
-    magnetometerData: @escaping (AnyHashable) -> MagnetometerData?,
-    set: @escaping (AnyHashable, Properties) -> Effect<Never, Never>,
-    startAccelerometerUpdates: @escaping (AnyHashable, OperationQueue) -> Effect<
-      AccelerometerData, Error
-    >,
-    startDeviceMotionUpdates: @escaping (AnyHashable, CMAttitudeReferenceFrame, OperationQueue) ->
-      Effect<DeviceMotion, Error>,
-    startGyroUpdates: @escaping (AnyHashable, OperationQueue) -> Effect<GyroData, Error>,
-    startMagnetometerUpdates: @escaping (AnyHashable, OperationQueue) -> Effect<
-      MagnetometerData, Error
-    >,
-    stopAccelerometerUpdates: @escaping (AnyHashable) -> Effect<Never, Never>,
-    stopDeviceMotionUpdates: @escaping (AnyHashable) -> Effect<Never, Never>,
-    stopGyroUpdates: @escaping (AnyHashable) -> Effect<Never, Never>,
-    stopMagnetometerUpdates: @escaping (AnyHashable) -> Effect<Never, Never>
+    accelerometerData: @escaping @Sendable (AnyHashable) -> AccelerometerData?,
+    attitudeReferenceFrame: @escaping @Sendable (AnyHashable) -> CMAttitudeReferenceFrame,
+    availableAttitudeReferenceFrames: @escaping @Sendable () -> CMAttitudeReferenceFrame,
+    create: @escaping @Sendable (AnyHashable) async -> Void,
+    destroy: @escaping @Sendable (AnyHashable) async -> Void,
+    deviceMotion: @escaping @Sendable (AnyHashable) -> DeviceMotion?,
+    gyroData: @escaping @Sendable (AnyHashable) -> GyroData?,
+    isAccelerometerActive: @escaping @Sendable (AnyHashable) -> Bool,
+    isAccelerometerAvailable: @escaping @Sendable (AnyHashable) -> Bool,
+    isDeviceMotionActive: @escaping @Sendable (AnyHashable) -> Bool,
+    isDeviceMotionAvailable: @escaping @Sendable (AnyHashable) -> Bool,
+    isGyroActive: @escaping @Sendable (AnyHashable) -> Bool,
+    isGyroAvailable: @escaping @Sendable (AnyHashable) -> Bool,
+    isMagnetometerActive: @escaping @Sendable (AnyHashable) -> Bool,
+    isMagnetometerAvailable: @escaping @Sendable (AnyHashable) -> Bool,
+    magnetometerData: @escaping @Sendable (AnyHashable) -> MagnetometerData?,
+    set: @escaping @Sendable (AnyHashable, Properties) async -> Void,
+    startAccelerometerUpdates:
+      @escaping @Sendable (AnyHashable, OperationQueue) ->
+      AsyncThrowingStream<AccelerometerData, any Error>,
+    startDeviceMotionUpdates:
+      @escaping @Sendable (
+        AnyHashable,
+        CMAttitudeReferenceFrame,
+        OperationQueue
+      ) -> AsyncThrowingStream<DeviceMotion, any Error>,
+    startGyroUpdates:
+      @escaping @Sendable (AnyHashable, OperationQueue) ->
+      AsyncThrowingStream<GyroData, any Error>,
+    startMagnetometerUpdates:
+      @escaping @Sendable (AnyHashable, OperationQueue) ->
+      AsyncThrowingStream<MagnetometerData, any Error>,
+    stopAccelerometerUpdates: @escaping @Sendable (AnyHashable) async -> Void,
+    stopDeviceMotionUpdates: @escaping @Sendable (AnyHashable) async -> Void,
+    stopGyroUpdates: @escaping @Sendable (AnyHashable) async -> Void,
+    stopMagnetometerUpdates: @escaping @Sendable (AnyHashable) async -> Void
   ) {
     self.accelerometerData = accelerometerData
     self.attitudeReferenceFrame = attitudeReferenceFrame
@@ -400,7 +245,7 @@ public struct MotionManager {
     self.stopMagnetometerUpdates = stopMagnetometerUpdates
   }
 
-  public struct Properties {
+  public struct Properties: Sendable {
     public var accelerometerUpdateInterval: TimeInterval?
     public var deviceMotionUpdateInterval: TimeInterval?
     public var gyroUpdateInterval: TimeInterval?
@@ -422,31 +267,59 @@ public struct MotionManager {
     }
   }
 
-  var accelerometerData: (AnyHashable) -> AccelerometerData?
-  var attitudeReferenceFrame: (AnyHashable) -> CMAttitudeReferenceFrame
+  var accelerometerData: @Sendable (AnyHashable) -> AccelerometerData?
+  var attitudeReferenceFrame: @Sendable (AnyHashable) -> CMAttitudeReferenceFrame
   /// Returns a bitmask specifying the available attitude reference frames on the device.
-  var availableAttitudeReferenceFrames: () -> CMAttitudeReferenceFrame
-  var create: (AnyHashable) -> Effect<Never, Never>
-  var destroy: (AnyHashable) -> Effect<Never, Never>
-  var deviceMotion: (AnyHashable) -> DeviceMotion?
-  var gyroData: (AnyHashable) -> GyroData?
-  var isAccelerometerActive: (AnyHashable) -> Bool
-  var isAccelerometerAvailable: (AnyHashable) -> Bool
-  var isDeviceMotionActive: (AnyHashable) -> Bool
-  var isDeviceMotionAvailable: (AnyHashable) -> Bool
-  var isGyroActive: (AnyHashable) -> Bool
-  var isGyroAvailable: (AnyHashable) -> Bool
-  var isMagnetometerActive: (AnyHashable) -> Bool
-  var isMagnetometerAvailable: (AnyHashable) -> Bool
-  var magnetometerData: (AnyHashable) -> MagnetometerData?
-  var set: (AnyHashable, Properties) -> Effect<Never, Never>
-  var startAccelerometerUpdates: (AnyHashable, OperationQueue) -> Effect<AccelerometerData, Error>
+  var availableAttitudeReferenceFrames: @Sendable () -> CMAttitudeReferenceFrame
+  var create: @Sendable (AnyHashable) async -> Void
+  var destroy: @Sendable (AnyHashable) async -> Void
+  var deviceMotion: @Sendable (AnyHashable) -> DeviceMotion?
+  var gyroData: @Sendable (AnyHashable) -> GyroData?
+  var isAccelerometerActive: @Sendable (AnyHashable) -> Bool
+  var isAccelerometerAvailable: @Sendable (AnyHashable) -> Bool
+  var isDeviceMotionActive: @Sendable (AnyHashable) -> Bool
+  var isDeviceMotionAvailable: @Sendable (AnyHashable) -> Bool
+  var isGyroActive: @Sendable (AnyHashable) -> Bool
+  var isGyroAvailable: @Sendable (AnyHashable) -> Bool
+  var isMagnetometerActive: @Sendable (AnyHashable) -> Bool
+  var isMagnetometerAvailable: @Sendable (AnyHashable) -> Bool
+  var magnetometerData: @Sendable (AnyHashable) -> MagnetometerData?
+  var set: @Sendable (AnyHashable, Properties) async -> Void
+  var startAccelerometerUpdates:
+    @Sendable (AnyHashable, OperationQueue) -> AsyncThrowingStream<AccelerometerData, any Error>
   var startDeviceMotionUpdates:
-    (AnyHashable, CMAttitudeReferenceFrame, OperationQueue) -> Effect<DeviceMotion, Error>
-  var startGyroUpdates: (AnyHashable, OperationQueue) -> Effect<GyroData, Error>
-  var startMagnetometerUpdates: (AnyHashable, OperationQueue) -> Effect<MagnetometerData, Error>
-  var stopAccelerometerUpdates: (AnyHashable) -> Effect<Never, Never>
-  var stopDeviceMotionUpdates: (AnyHashable) -> Effect<Never, Never>
-  var stopGyroUpdates: (AnyHashable) -> Effect<Never, Never>
-  var stopMagnetometerUpdates: (AnyHashable) -> Effect<Never, Never>
+    @Sendable (AnyHashable, CMAttitudeReferenceFrame, OperationQueue) ->
+      AsyncThrowingStream<DeviceMotion, any Error>
+  var startGyroUpdates:
+    @Sendable (AnyHashable, OperationQueue) -> AsyncThrowingStream<GyroData, any Error>
+  var startMagnetometerUpdates:
+    @Sendable (AnyHashable, OperationQueue) -> AsyncThrowingStream<MagnetometerData, any Error>
+  var stopAccelerometerUpdates: @Sendable (AnyHashable) async -> Void
+  var stopDeviceMotionUpdates: @Sendable (AnyHashable) async -> Void
+  var stopGyroUpdates: @Sendable (AnyHashable) async -> Void
+  var stopMagnetometerUpdates: @Sendable (AnyHashable) async -> Void
 }
+
+#if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
+  @available(iOS 4.0, *)
+  @available(macCatalyst 13.0, *)
+  @available(macOS, unavailable)
+  @available(tvOS, unavailable)
+  @available(watchOS 2.0, *)
+  extension MotionManager: DependencyKey {
+    public static var liveValue: Self { .live }
+    public static var testValue: Self { .unimplemented() }
+  }
+
+  @available(iOS 4.0, *)
+  @available(macCatalyst 13.0, *)
+  @available(macOS, unavailable)
+  @available(tvOS, unavailable)
+  @available(watchOS 2.0, *)
+  extension DependencyValues {
+    public var motionManager: MotionManager {
+      get { self[MotionManager.self] }
+      set { self[MotionManager.self] = newValue }
+    }
+  }
+#endif

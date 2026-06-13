@@ -4,7 +4,7 @@
   /// The device's orientation relative to a known frame of reference at a point in time.
   ///
   /// See the documentation for `CMAttitude` for more info.
-  public struct Attitude: Hashable {
+  public struct Attitude: Hashable, @unchecked Sendable {
     public var quaternion: CMQuaternion
 
     public init(_ attitude: CMAttitude) {

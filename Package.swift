@@ -1,13 +1,13 @@
-// swift-tools-version:5.3
+// swift-tools-version:6.1
 
 import PackageDescription
 
 let package = Package(
   name: "composable-core-motion",
   platforms: [
-    .iOS(.v13),
-    .macOS(.v10_15),
-    .watchOS(.v6),
+    .iOS(.v16),
+    .macOS(.v13),
+    .watchOS(.v9),
   ],
   products: [
     .library(
@@ -16,7 +16,7 @@ let package = Package(
     )
   ],
   dependencies: [
-    .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "0.21.0")
+    .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "1.26.0")
   ],
   targets: [
     .target(
@@ -29,5 +29,6 @@ let package = Package(
       name: "ComposableCoreMotionTests",
       dependencies: ["ComposableCoreMotion"]
     ),
-  ]
+  ],
+  swiftLanguageModes: [.v6]
 )

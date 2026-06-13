@@ -4,7 +4,7 @@
   /// A data sample from the device's three accelerometers.
   ///
   /// See the documentation for `CMAccelerometerData` for more info.
-  public struct AccelerometerData: Hashable {
+  public struct AccelerometerData: Hashable, @unchecked Sendable {
     public var acceleration: CMAcceleration
 
     public init(_ accelerometerData: CMAccelerometerData) {

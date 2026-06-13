@@ -1,32 +1,29 @@
-import Combine
 import ComposableArchitecture
 import ComposableCoreMotion
 import CoreMotion
-import XCTest
+import Testing
 
 @testable import MotionManagerDemo
 
-class MotionTests: XCTestCase {
-  func testMotionUpdate() {
-    let motionSubject = PassthroughSubject<DeviceMotion, Error>()
+@Suite
+@MainActor
+struct MotionTests {
+  @Test
+  func motionUpdate() async {
+    let stream = AsyncThrowingStream<DeviceMotion, any Error>.makeStream(of: DeviceMotion.self)
+    let motionManagerIsLive = LockIsolated(false)
 
-    var motionManagerIsLive = false
-
-    let store = TestStore(
-      initialState: .init(),
-      reducer: appReducer,
-      environment: .init(
-        motionManager: .unimplemented(
-          create: { _ in .fireAndForget { motionManagerIsLive = true } },
-          destroy: { _ in .fireAndForget { motionManagerIsLive = false } },
-          deviceMotion: { _ in nil },
-          startDeviceMotionUpdates: { _, _, _ in motionSubject.eraseToEffect() },
-          stopDeviceMotionUpdates: { _ in
-            .fireAndForget { motionSubject.send(completion: .finished) }
-          }
-        )
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    } withDependencies: {
+      $0.motionManager = .unimplemented(
+        create: { _ in motionManagerIsLive.setValue(true) },
+        destroy: { _ in motionManagerIsLive.setValue(false) },
+        deviceMotion: { _ in nil },
+        startDeviceMotionUpdates: { _, _, _ in stream.stream },
+        stopDeviceMotionUpdates: { _ in stream.continuation.finish() }
       )
-    )
+    }
 
     let deviceMotion = DeviceMotion(
       attitude: .init(quaternion: .init(x: 1, y: 0, z: 0, w: 0)),
@@ -38,27 +35,27 @@ class MotionTests: XCTestCase {
       userAcceleration: CMAcceleration(x: 4, y: 5, z: 6)
     )
 
-    store.assert(
-      .send(.recordingButtonTapped) {
-        $0.isRecording = true
-        XCTAssertEqual(motionManagerIsLive, true)
-      },
+    await store.send(.recordingButtonTapped) {
+      $0.isRecording = true
+    }
+    #expect(motionManagerIsLive.value == true)
 
-      .do { motionSubject.send(deviceMotion) },
-      .receive(.motionUpdate(.success(deviceMotion))) {
-        $0.z = [32]
-      },
+    stream.continuation.yield(deviceMotion)
+    await store.receive(.motionUpdate(.success(deviceMotion))) {
+      $0.z = [32]
+    }
 
-      .send(.recordingButtonTapped) {
-        $0.isRecording = false
-        XCTAssertEqual(motionManagerIsLive, false)
-      }
-    )
+    await store.send(.recordingButtonTapped) {
+      $0.isRecording = false
+    }
+    await store.finish()
+    #expect(motionManagerIsLive.value == false)
   }
 
-  func testFacingDirection() {
-    let motionSubject = PassthroughSubject<DeviceMotion, Error>()
-    var motionManagerIsLive = false
+  @Test
+  func facingDirection() async {
+    let stream = AsyncThrowingStream<DeviceMotion, any Error>.makeStream(of: DeviceMotion.self)
+    let motionManagerIsLive = LockIsolated(false)
 
     let initialDeviceMotion = DeviceMotion(
       attitude: .init(quaternion: .init(x: 1, y: 0, z: 0, w: 0)),
@@ -72,47 +69,42 @@ class MotionTests: XCTestCase {
     var updatedDeviceMotion = initialDeviceMotion
     updatedDeviceMotion.attitude = .init(quaternion: .init(x: 0, y: 0, z: 1, w: 0))
 
-    let store = TestStore(
-      initialState: .init(),
-      reducer: appReducer,
-      environment: .init(
-        motionManager: .unimplemented(
-          create: { _ in .fireAndForget { motionManagerIsLive = true } },
-          destroy: { _ in .fireAndForget { motionManagerIsLive = false } },
-          deviceMotion: { _ in initialDeviceMotion },
-          startDeviceMotionUpdates: { _, _, _ in motionSubject.eraseToEffect() },
-          stopDeviceMotionUpdates: { _ in
-            .fireAndForget { motionSubject.send(completion: .finished) }
-          }
-        )
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    } withDependencies: {
+      $0.motionManager = .unimplemented(
+        create: { _ in motionManagerIsLive.setValue(true) },
+        destroy: { _ in motionManagerIsLive.setValue(false) },
+        deviceMotion: { _ in initialDeviceMotion },
+        startDeviceMotionUpdates: { _, _, _ in stream.stream },
+        stopDeviceMotionUpdates: { _ in stream.continuation.finish() }
       )
-    )
+    }
 
-    store.assert(
-      .send(.recordingButtonTapped) {
-        $0.isRecording = true
-        XCTAssertEqual(motionManagerIsLive, true)
-      },
+    await store.send(.recordingButtonTapped) {
+      $0.isRecording = true
+    }
+    #expect(motionManagerIsLive.value == true)
 
-      .do { motionSubject.send(initialDeviceMotion) },
-      .receive(.motionUpdate(.success(initialDeviceMotion))) {
-        $0.facingDirection = .forward
-        $0.initialAttitude = initialDeviceMotion.attitude
-        $0.z = [0]
-      },
+    stream.continuation.yield(initialDeviceMotion)
+    await store.receive(.motionUpdate(.success(initialDeviceMotion))) {
+      $0.facingDirection = .forward
+      $0.initialAttitude = initialDeviceMotion.attitude
+      $0.z = [0]
+    }
 
-      .do { motionSubject.send(updatedDeviceMotion) },
-      .receive(.motionUpdate(.success(updatedDeviceMotion))) {
-        $0.z = [0, 0]
-        $0.facingDirection = .backward
-      },
+    stream.continuation.yield(updatedDeviceMotion)
+    await store.receive(.motionUpdate(.success(updatedDeviceMotion))) {
+      $0.z = [0, 0]
+      $0.facingDirection = .backward
+    }
 
-      .send(.recordingButtonTapped) {
-        $0.facingDirection = nil
-        $0.initialAttitude = nil
-        $0.isRecording = false
-        XCTAssertEqual(motionManagerIsLive, false)
-      }
-    )
+    await store.send(.recordingButtonTapped) {
+      $0.facingDirection = nil
+      $0.initialAttitude = nil
+      $0.isRecording = false
+    }
+    await store.finish()
+    #expect(motionManagerIsLive.value == false)
   }
 }

@@ -7,68 +7,84 @@ import ComposableArchitecture
 @available(watchOS 2.0, *)
 extension MotionManager {
   public static func unimplemented(
-    accelerometerData: @escaping (AnyHashable) -> AccelerometerData? = { _ in
+    accelerometerData: @escaping @Sendable (AnyHashable) -> AccelerometerData? = { _ in
       _unimplemented("accelerometerData")
     },
-    attitudeReferenceFrame: @escaping (AnyHashable) -> CMAttitudeReferenceFrame = { _ in
+    attitudeReferenceFrame: @escaping @Sendable (AnyHashable) -> CMAttitudeReferenceFrame = { _ in
       _unimplemented("attitudeReferenceFrame")
     },
-    availableAttitudeReferenceFrames: @escaping () -> CMAttitudeReferenceFrame = {
+    availableAttitudeReferenceFrames: @escaping @Sendable () -> CMAttitudeReferenceFrame = {
       _unimplemented("availableAttitudeReferenceFrames")
     },
-    create: @escaping (AnyHashable) -> Effect<Never, Never> = { _ in _unimplemented("create") },
-    destroy: @escaping (AnyHashable) -> Effect<Never, Never> = { _ in _unimplemented("destroy") },
-    deviceMotion: @escaping (AnyHashable) -> DeviceMotion? = { _ in _unimplemented("deviceMotion")
+    create: @escaping @Sendable (AnyHashable) async -> Void = { _ in _unimplemented("create") },
+    destroy: @escaping @Sendable (AnyHashable) async -> Void = { _ in _unimplemented("destroy") },
+    deviceMotion: @escaping @Sendable (AnyHashable) -> DeviceMotion? = { _ in
+      _unimplemented("deviceMotion")
     },
-    gyroData: @escaping (AnyHashable) -> GyroData? = { _ in _unimplemented("gyroData") },
-    isAccelerometerActive: @escaping (AnyHashable) -> Bool = { _ in
+    gyroData: @escaping @Sendable (AnyHashable) -> GyroData? = { _ in _unimplemented("gyroData") },
+    isAccelerometerActive: @escaping @Sendable (AnyHashable) -> Bool = { _ in
       _unimplemented("isAccelerometerActive")
     },
-    isAccelerometerAvailable: @escaping (AnyHashable) -> Bool = { _ in
+    isAccelerometerAvailable: @escaping @Sendable (AnyHashable) -> Bool = { _ in
       _unimplemented("isAccelerometerAvailable")
     },
-    isDeviceMotionActive: @escaping (AnyHashable) -> Bool = { _ in
+    isDeviceMotionActive: @escaping @Sendable (AnyHashable) -> Bool = { _ in
       _unimplemented("isDeviceMotionActive")
     },
-    isDeviceMotionAvailable: @escaping (AnyHashable) -> Bool = { _ in
+    isDeviceMotionAvailable: @escaping @Sendable (AnyHashable) -> Bool = { _ in
       _unimplemented("isDeviceMotionAvailable")
     },
-    isGyroActive: @escaping (AnyHashable) -> Bool = { _ in _unimplemented("isGyroActive") },
-    isGyroAvailable: @escaping (AnyHashable) -> Bool = { _ in _unimplemented("isGyroAvailable") },
-    isMagnetometerActive: @escaping (AnyHashable) -> Bool = { _ in
+    isGyroActive: @escaping @Sendable (AnyHashable) -> Bool = { _ in
+      _unimplemented("isGyroActive")
+    },
+    isGyroAvailable: @escaping @Sendable (AnyHashable) -> Bool = { _ in
+      _unimplemented("isGyroAvailable")
+    },
+    isMagnetometerActive: @escaping @Sendable (AnyHashable) -> Bool = { _ in
       _unimplemented("isMagnetometerActive")
     },
-    isMagnetometerAvailable: @escaping (AnyHashable) -> Bool = { _ in
+    isMagnetometerAvailable: @escaping @Sendable (AnyHashable) -> Bool = { _ in
       _unimplemented("isMagnetometerAvailable")
     },
-    magnetometerData: @escaping (AnyHashable) -> MagnetometerData? = { _ in
+    magnetometerData: @escaping @Sendable (AnyHashable) -> MagnetometerData? = { _ in
       _unimplemented("magnetometerData")
     },
-    set: @escaping (AnyHashable, MotionManager.Properties) -> Effect<Never, Never> = { _, _ in
+    set: @escaping @Sendable (AnyHashable, MotionManager.Properties) async -> Void = { _, _ in
       _unimplemented("set")
     },
-    startAccelerometerUpdates: @escaping (AnyHashable, OperationQueue) -> Effect<
-      AccelerometerData, Error
-    > = { _, _ in _unimplemented("startAccelerometerUpdates") },
-    startDeviceMotionUpdates: @escaping (AnyHashable, CMAttitudeReferenceFrame, OperationQueue) ->
-      Effect<DeviceMotion, Error> = { _, _, _ in _unimplemented("startDeviceMotionUpdates") },
-    startGyroUpdates: @escaping (AnyHashable, OperationQueue) -> Effect<GyroData, Error> = {
-      _, _ in
-      _unimplemented("startGyroUpdates")
-    },
-    startMagnetometerUpdates: @escaping (AnyHashable, OperationQueue) -> Effect<
-      MagnetometerData, Error
-    > = { _, _ in _unimplemented("startMagnetometerUpdates") },
-    stopAccelerometerUpdates: @escaping (AnyHashable) -> Effect<Never, Never> = { _ in
+    startAccelerometerUpdates:
+      @escaping @Sendable (AnyHashable, OperationQueue) ->
+      AsyncThrowingStream<AccelerometerData, any Error> = { _, _ in
+        _unimplemented("startAccelerometerUpdates")
+      },
+    startDeviceMotionUpdates:
+      @escaping @Sendable (
+        AnyHashable,
+        CMAttitudeReferenceFrame,
+        OperationQueue
+      ) -> AsyncThrowingStream<DeviceMotion, any Error> = { _, _, _ in
+        _unimplemented("startDeviceMotionUpdates")
+      },
+    startGyroUpdates:
+      @escaping @Sendable (AnyHashable, OperationQueue) ->
+      AsyncThrowingStream<GyroData, any Error> = { _, _ in
+        _unimplemented("startGyroUpdates")
+      },
+    startMagnetometerUpdates:
+      @escaping @Sendable (AnyHashable, OperationQueue) ->
+      AsyncThrowingStream<MagnetometerData, any Error> = { _, _ in
+        _unimplemented("startMagnetometerUpdates")
+      },
+    stopAccelerometerUpdates: @escaping @Sendable (AnyHashable) async -> Void = { _ in
       _unimplemented("stopAccelerometerUpdates")
     },
-    stopDeviceMotionUpdates: @escaping (AnyHashable) -> Effect<Never, Never> = { _ in
+    stopDeviceMotionUpdates: @escaping @Sendable (AnyHashable) async -> Void = { _ in
       _unimplemented("stopDeviceMotionUpdates")
     },
-    stopGyroUpdates: @escaping (AnyHashable) -> Effect<Never, Never> = { _ in
+    stopGyroUpdates: @escaping @Sendable (AnyHashable) async -> Void = { _ in
       _unimplemented("stopGyroUpdates")
     },
-    stopMagnetometerUpdates: @escaping (AnyHashable) -> Effect<Never, Never> = { _ in
+    stopMagnetometerUpdates: @escaping @Sendable (AnyHashable) async -> Void = { _ in
       _unimplemented("stopMagnetometerUpdates")
     }
   ) -> MotionManager {

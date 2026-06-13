@@ -4,7 +4,7 @@
   /// Measurements of the Earth's magnetic field relative to the device.
   ///
   /// See the documentation for `CMMagnetometerData` for more info.
-  public struct MagnetometerData: Hashable {
+  public struct MagnetometerData: Hashable, @unchecked Sendable {
     public var magneticField: CMMagneticField
     public var timestamp: TimeInterval
 

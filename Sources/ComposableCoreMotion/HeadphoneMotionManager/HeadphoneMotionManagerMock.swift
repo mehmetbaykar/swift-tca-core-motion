@@ -7,19 +7,27 @@ import ComposableArchitecture
 @available(watchOS 7, *)
 extension HeadphoneMotionManager {
   public static func unimplemented(
-    create: @escaping (AnyHashable) -> Effect<Action, Never> = { _ in _unimplemented("create") },
-    destroy: @escaping (AnyHashable) -> Effect<Never, Never> = { _ in _unimplemented("destroy") },
-    deviceMotion: @escaping (AnyHashable) -> DeviceMotion? = { _ in _unimplemented("deviceMotion")
+    create: @escaping @Sendable (AnyHashable) -> AsyncStream<Action> = { _ in
+      _unimplemented("create")
     },
-    isDeviceMotionActive: @escaping (AnyHashable) -> Bool = { _ in
+    destroy: @escaping @Sendable (AnyHashable) async -> Void = { _ in
+      _unimplemented("destroy")
+    },
+    deviceMotion: @escaping @Sendable (AnyHashable) -> DeviceMotion? = { _ in
+      _unimplemented("deviceMotion")
+    },
+    isDeviceMotionActive: @escaping @Sendable (AnyHashable) -> Bool = { _ in
       _unimplemented("isDeviceMotionActive")
     },
-    isDeviceMotionAvailable: @escaping (AnyHashable) -> Bool = { _ in
+    isDeviceMotionAvailable: @escaping @Sendable (AnyHashable) -> Bool = { _ in
       _unimplemented("isDeviceMotionAvailable")
     },
-    startDeviceMotionUpdates: @escaping (AnyHashable, OperationQueue) ->
-      Effect<DeviceMotion, Error> = { _, _ in _unimplemented("startDeviceMotionUpdates") },
-    stopDeviceMotionUpdates: @escaping (AnyHashable) -> Effect<Never, Never> = { _ in
+    startDeviceMotionUpdates:
+      @escaping @Sendable (AnyHashable, OperationQueue) ->
+      AsyncThrowingStream<DeviceMotion, any Error> = { _, _ in
+        _unimplemented("startDeviceMotionUpdates")
+      },
+    stopDeviceMotionUpdates: @escaping @Sendable (AnyHashable) async -> Void = { _ in
       _unimplemented("stopDeviceMotionUpdates")
     }
   ) -> HeadphoneMotionManager {

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import CoreMotion
+import Foundation
 
 /// A wrapper around Core Motion's `CMHeadphoneMotionManager` that exposes its functionality
 /// through effects and actions, making it easy to use with the Composable Architecture, and easy
@@ -9,12 +10,12 @@ import CoreMotion
 @available(macOS, unavailable)
 @available(tvOS, unavailable)
 @available(watchOS 7, *)
-public struct HeadphoneMotionManager {
+public struct HeadphoneMotionManager: Sendable {
 
   /// Actions that correspond to `CMHeadphoneMotionManagerDelegate` methods.
   ///
   /// See `CMHeadphoneMotionManagerDelegate` for more information.
-  public enum Action: Equatable {
+  public enum Action: Equatable, Sendable {
     case didConnect
     case didDisconnect
   }
@@ -23,7 +24,7 @@ public struct HeadphoneMotionManager {
   ///
   /// A motion manager must be first created before you can use its functionality, such as
   /// starting device motion updates or accessing data directly from the manager.
-  public func create(id: AnyHashable) -> Effect<Action, Never> {
+  public func create(id: AnyHashable) -> AsyncStream<Action> {
     self.create(id)
   }
 
@@ -31,8 +32,8 @@ public struct HeadphoneMotionManager {
   ///
   /// In is good practice to destroy a headphone motion manager once you are done with it, such as
   /// when you leave a screen or no longer need motion data.
-  public func destroy(id: AnyHashable) -> Effect<Never, Never> {
-    self.destroy(id)
+  public func destroy(id: AnyHashable) async {
+    await self.destroy(id)
   }
 
   /// The latest sample of device-motion data.
@@ -58,24 +59,25 @@ public struct HeadphoneMotionManager {
   public func startDeviceMotionUpdates(
     id: AnyHashable,
     to queue: OperationQueue = .main
-  ) -> Effect<DeviceMotion, Error> {
+  ) -> AsyncThrowingStream<DeviceMotion, any Error> {
     self.startDeviceMotionUpdates(id, queue)
   }
 
   /// Stops device-motion updates.
-  public func stopDeviceMotionUpdates(id: AnyHashable) -> Effect<Never, Never> {
-    self.stopDeviceMotionUpdates(id)
+  public func stopDeviceMotionUpdates(id: AnyHashable) async {
+    await self.stopDeviceMotionUpdates(id)
   }
 
   public init(
-    create: @escaping (AnyHashable) -> Effect<Action, Never>,
-    destroy: @escaping (AnyHashable) -> Effect<Never, Never>,
-    deviceMotion: @escaping (AnyHashable) -> DeviceMotion?,
-    isDeviceMotionActive: @escaping (AnyHashable) -> Bool,
-    isDeviceMotionAvailable: @escaping (AnyHashable) -> Bool,
-    startDeviceMotionUpdates: @escaping (AnyHashable, OperationQueue) ->
-      Effect<DeviceMotion, Error>,
-    stopDeviceMotionUpdates: @escaping (AnyHashable) -> Effect<Never, Never>
+    create: @escaping @Sendable (AnyHashable) -> AsyncStream<Action>,
+    destroy: @escaping @Sendable (AnyHashable) async -> Void,
+    deviceMotion: @escaping @Sendable (AnyHashable) -> DeviceMotion?,
+    isDeviceMotionActive: @escaping @Sendable (AnyHashable) -> Bool,
+    isDeviceMotionAvailable: @escaping @Sendable (AnyHashable) -> Bool,
+    startDeviceMotionUpdates:
+      @escaping @Sendable (AnyHashable, OperationQueue) ->
+      AsyncThrowingStream<DeviceMotion, any Error>,
+    stopDeviceMotionUpdates: @escaping @Sendable (AnyHashable) async -> Void
   ) {
     self.create = create
     self.destroy = destroy
@@ -86,11 +88,36 @@ public struct HeadphoneMotionManager {
     self.stopDeviceMotionUpdates = stopDeviceMotionUpdates
   }
 
-  var create: (AnyHashable) -> Effect<Action, Never>
-  var destroy: (AnyHashable) -> Effect<Never, Never>
-  var deviceMotion: (AnyHashable) -> DeviceMotion?
-  var isDeviceMotionActive: (AnyHashable) -> Bool
-  var isDeviceMotionAvailable: (AnyHashable) -> Bool
-  var startDeviceMotionUpdates: (AnyHashable, OperationQueue) -> Effect<DeviceMotion, Error>
-  var stopDeviceMotionUpdates: (AnyHashable) -> Effect<Never, Never>
+  var create: @Sendable (AnyHashable) -> AsyncStream<Action>
+  var destroy: @Sendable (AnyHashable) async -> Void
+  var deviceMotion: @Sendable (AnyHashable) -> DeviceMotion?
+  var isDeviceMotionActive: @Sendable (AnyHashable) -> Bool
+  var isDeviceMotionAvailable: @Sendable (AnyHashable) -> Bool
+  var startDeviceMotionUpdates:
+    @Sendable (AnyHashable, OperationQueue) -> AsyncThrowingStream<DeviceMotion, any Error>
+  var stopDeviceMotionUpdates: @Sendable (AnyHashable) async -> Void
 }
+
+#if os(iOS) || os(watchOS) || targetEnvironment(macCatalyst)
+  @available(iOS 14, *)
+  @available(macCatalyst 14, *)
+  @available(macOS, unavailable)
+  @available(tvOS, unavailable)
+  @available(watchOS 7, *)
+  extension HeadphoneMotionManager: DependencyKey {
+    public static var liveValue: Self { .live }
+    public static var testValue: Self { .unimplemented() }
+  }
+
+  @available(iOS 14, *)
+  @available(macCatalyst 14, *)
+  @available(macOS, unavailable)
+  @available(tvOS, unavailable)
+  @available(watchOS 7, *)
+  extension DependencyValues {
+    public var headphoneMotionManager: HeadphoneMotionManager {
+      get { self[HeadphoneMotionManager.self] }
+      set { self[HeadphoneMotionManager.self] = newValue }
+    }
+  }
+#endif
