@@ -1,180 +1,202 @@
 # Composable Core Motion
 
-[![CI](https://github.com/pointfreeco/composable-core-motion/workflows/CI/badge.svg)](https://github.com/pointfreeco/composable-core-motion/actions?query=workflow%3ACI)
-[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fpointfreeco%2Fcomposable-core-motion%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/pointfreeco/composable-core-motion)
-[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fpointfreeco%2Fcomposable-core-motion%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/pointfreeco/composable-core-motion)
+[![CI](https://github.com/mehmetbaykar/swift-tca-core-motion/actions/workflows/ci.yml/badge.svg)](https://github.com/mehmetbaykar/swift-tca-core-motion/actions/workflows/ci.yml)
 
-Composable Core Motion is library that bridges [the Composable Architecture](https://github.com/pointfreeco/swift-composable-architecture) and [Core Motion](https://developer.apple.com/documentation/coremotion).
+Composable Core Motion bridges Apple's [Core Motion](https://developer.apple.com/documentation/coremotion) APIs into [the Composable Architecture](https://github.com/pointfreeco/swift-composable-architecture). It exposes motion managers as TCA dependencies with async operations, async streams, live implementations, and controllable test values.
 
 * [Example](#example)
-* [Basic usage](#basic-usage)
+* [Requirements](#requirements)
 * [Installation](#installation)
+* [Basic usage](#basic-usage)
+* [Testing](#testing)
+* [API surface](#api-surface)
 * [Documentation](#documentation)
 * [Help](#help)
 
 ## Example
 
-Check out the [MotionManager](./Examples/MotionManager) demo to see ComposableCoreMotion in practice.
+Check out the [MotionManager](./Examples/MotionManager) demo to see `ComposableCoreMotion` in a TCA feature. The app records device motion, graphs movement, changes background color from attitude changes, and includes Swift Testing coverage for the reducer.
 
-## Basic Usage
+The live demo needs a real iPhone, iPad, or Apple Watch for motion updates. The simulator can build the app and run tests, but it cannot provide real Core Motion samples.
 
-To use ComposableCoreMotion your application, you can add an action to your feature's domain that represents the type of motion data you are interested in receiving. For example, if you only want motion updates, then you can add the following action:
+## Requirements
 
-```swift
-import ComposableCoreMotion
+The package currently targets Swift 6.3, TCA 1.26, and these platform minimums:
 
-enum FeatureAction {
-  case motionUpdate(Result<DeviceMotion, NSError>)
+* iOS 16
+* macOS 13
+* watchOS 9
 
-  // Your feature's other actions:
-  ...
-}
-```
-
-This action will be sent every time the motion manager receives new device motion data.
-
-Next, add a `MotionManager` type, which is a wrapper around a `CMMotionManager` that this library provides, to your feature's environment of dependencies:
-
-```swift
-struct FeatureEnvironment {
-  var motionManager: MotionManager
-
-  // Your feature's other dependencies:
-  ...
-}
-```
-
-Then, create a motion manager by returning an effect from our reducer. You can either do this when your feature starts up, such as when `onAppear` is invoked, or you can do it when a user action occurs, such as when the user taps a button.
-
-As an example, say we want to create a motion manager and start listening for motion updates when a "Record" button is tapped. Then we can can do both of those things by executing two effects, one after the other:
-
-```swift
-let featureReducer = Reducer<FeatureState, FeatureAction, FeatureEnvironment> {
-  state, action, environment in
-
-  // A unique identifier for our location manager, just in case we want to use
-  // more than one in our application.
-  struct MotionManagerId: Hashable {}
-
-  switch action {
-  case .recordingButtonTapped:
-    return .concatenate(
-      environment.motionManager
-        .create(id: MotionManagerId())
-        .fireAndForget(),
-
-      environment.motionManager
-        .startDeviceMotionUpdates(id: MotionManagerId(), using: .xArbitraryZVertical, to: .main)
-        .mapError { $0 as NSError }
-        .catchToEffect()
-        .map(AppAction.motionUpdate)
-    )
-
-  ...
-  }
-}
-```
-
-After those effects are executed you will get a steady stream of device motion updates sent to the `.motionUpdate` action, which you can handle in the reducer. For example, to compute how much the device is moving up and down we can take the dot product of the device's gravity vector with the device's acceleration vector, and we could store that in the feature's state:
-
-```swift
-case let .motionUpdate(.success(deviceMotion)):
-   state.zs.append(
-     motion.gravity.x * motion.userAcceleration.x
-       + motion.gravity.y * motion.userAcceleration.y
-       + motion.gravity.z * motion.userAcceleration.z
-   )
-
-case let .motionUpdate(.failure(error)):
-  // Do something with the motion update failure, like show an alert.
-```
-
-And then later, if you want to stop receiving motion updates, such as when a "Stop" button is tapped, we can execute an effect to stop the motion manager, and even fully destroy it if we don't need the manager anymore:
-
-```swift
-case .stopButtonTapped:
-  return .concatenate(
-    environment.motionManager
-      .stopDeviceMotionUpdates(id: MotionManagerId())
-      .fireAndForget(),
-
-    environment.motionManager
-      .destroy(id: MotionManagerId())
-      .fireAndForget()
-  )
-```
-
-That is enough to implement a basic application that interacts with Core Motion.
-
-But the true power of building your application and interfacing with Core Motion this way is the ability to instantly _test_ how your application behaves with Core Motion. We start by creating a `TestStore` whose environment contains an `.unimplemented` version of the `MotionManager`. The `.unimplemented` function allows you to create a fully controlled version of the motion manager that does not deal with a real `CMMotionManager` at all. Instead, you override whichever endpoints your feature needs to supply deterministic functionality.
-
-For example, let's test that we property start the motion manager when we tap the record button, and that we compute the z-motion correctly, and further that we stop the motion manager when we tap the stop button. We can construct a `TestStore` with a mock motion manager that keeps track of when the manager is created and destroyed, and further we can even substitute in a subject that we control for device motion updates. This allows us to send any data we want to for the device motion.
-
-```swift
-func testFeature() {
-  let motionSubject = PassthroughSubject<DeviceMotion, Error>()
-  var motionManagerIsLive = false
-
-  let store = TestStore(
-    initialState: .init(),
-    reducer: appReducer,
-    environment: .init(
-      motionManager: .unimplemented(
-        create: { _ in .fireAndForget { motionManagerIsLive = true } },
-        destroy: { _ in .fireAndForget { motionManagerIsLive = false } },
-        startDeviceMotionUpdates: { _, _, _ in motionSubject.eraseToEffect() },
-        stopDeviceMotionUpdates: { _ in
-          .fireAndForget { motionSubject.send(completion: .finished) }
-        }
-      )
-    )
-  )
-}
-```
-
-We can then make an assertion on our store that plays a basic user script. We can simulate the situation in which a user taps the record button, then some device motion data is received, and finally the user taps the stop button. During that script of user actions we expect the motion manager to be started, then for some z-motion values to be accumulated, and finally for the motion manager to be stopped:
-
-```swift
-let deviceMotion = DeviceMotion(
-  attitude: .init(quaternion: .init(x: 1, y: 0, z: 0, w: 0)),
-  gravity: CMAcceleration(x: 1, y: 2, z: 3),
-  heading: 0,
-  magneticField: .init(field: .init(x: 0, y: 0, z: 0), accuracy: .high),
-  rotationRate: .init(x: 0, y: 0, z: 0),
-  timestamp: 0,
-  userAcceleration: CMAcceleration(x: 4, y: 5, z: 6)
-)
-
-store.assert(
-  .send(.recordingButtonTapped) {
-    XCTAssertEqual(motionManagerIsLive, true)
-  },
-  .do { motionSubject.send(deviceMotion) },
-  .receive(.motionUpdate(.success(deviceMotion))) {
-    $0.zs = [32]
-  },
-  .send(.stopButtonTapped) {
-    XCTAssertEqual(motionManagerIsLive, false)
-  }
-)
-```
-
-This is only the tip of the iceberg. We can access any part of the `CMMotionManager` API in this way, and instantly unlock testability with how the motion functionality integrates with our core application logic. This can be incredibly powerful, and is typically not the kind of thing one can test easily.
+`MotionManager` and `HeadphoneMotionManager` mirror Core Motion availability. Their live implementations are available on iOS, watchOS, and Mac Catalyst; their manager APIs are unavailable on macOS and tvOS.
 
 ## Installation
 
-You can add ComposableCoreMotion to an Xcode project by adding it as a package dependency.
+Add this package to an Xcode project with **File > Add Package Dependencies...** and use:
 
-  1. From the **File** menu, select **Swift Packages › Add Package Dependency…**
-  2. Enter "https://github.com/pointfreeco/composable-core-motion" into the package repository URL text field
+```text
+https://github.com/mehmetbaykar/swift-tca-core-motion
+```
+
+For SwiftPM, add the package and depend on the `ComposableCoreMotion` product:
+
+```swift
+.package(url: "https://github.com/mehmetbaykar/swift-tca-core-motion", branch: "main")
+```
+
+```swift
+.product(name: "ComposableCoreMotion", package: "swift-tca-core-motion")
+```
+
+## Basic usage
+
+`MotionManager` is registered in `DependencyValues` as `\.motionManager`. Create a manager before using it, start one of the update streams from an effect, cancel that long-living effect when recording stops, and destroy the manager when done.
+
+```swift
+import ComposableArchitecture
+import ComposableCoreMotion
+import CoreMotion
+
+@Reducer
+struct Feature {
+  @ObservableState
+  struct State: Equatable {
+    var isRecording = false
+    var z: [Double] = []
+  }
+
+  enum Action: Equatable {
+    case motionUpdate(Result<DeviceMotion, NSError>)
+    case recordingButtonTapped
+  }
+
+  @Dependency(\.motionManager) var motionManager
+
+  var body: some ReducerOf<Self> {
+    Reduce { state, action in
+      switch action {
+      case let .motionUpdate(.success(motion)):
+        state.z.append(
+          motion.gravity.x * motion.userAcceleration.x
+            + motion.gravity.y * motion.userAcceleration.y
+            + motion.gravity.z * motion.userAcceleration.z
+        )
+        return .none
+
+      case .motionUpdate(.failure):
+        state.isRecording = false
+        return .run { _ in
+          await motionManager.stopDeviceMotionUpdates(id: MotionManagerID())
+          await motionManager.destroy(id: MotionManagerID())
+        }
+
+      case .recordingButtonTapped:
+        state.isRecording.toggle()
+
+        if state.isRecording {
+          return .run { send in
+            await motionManager.create(id: MotionManagerID())
+
+            do {
+              for try await motion in motionManager.startDeviceMotionUpdates(
+                id: MotionManagerID(),
+                using: .xArbitraryZVertical,
+                to: .main
+              ) {
+                await send(.motionUpdate(.success(motion)))
+              }
+            } catch {
+              await send(.motionUpdate(.failure(error as NSError)))
+            }
+          }
+          .cancellable(id: MotionManagerID(), cancelInFlight: true)
+        } else {
+          return .merge(
+            .cancel(id: MotionManagerID()),
+            .run { _ in
+              await motionManager.stopDeviceMotionUpdates(id: MotionManagerID())
+              await motionManager.destroy(id: MotionManagerID())
+            }
+          )
+        }
+      }
+    }
+  }
+}
+
+private struct MotionManagerID: Hashable, Sendable {}
+```
+
+Use the same pattern for accelerometer, gyro, magnetometer, and headphone motion streams. Use `set(id:accelerometerUpdateInterval:deviceMotionUpdateInterval:gyroUpdateInterval:magnetometerUpdateInterval:showsDeviceMovementDisplay:)` before starting updates when you need custom sampling intervals.
+
+## Testing
+
+Tests should override only the endpoints used by the feature. The `.unimplemented(...)` helper traps if an unexpected endpoint is called, which keeps dependency usage explicit.
+
+```swift
+import ComposableArchitecture
+import ComposableCoreMotion
+import CoreMotion
+import Testing
+
+@MainActor
+@Test
+func startsAndStopsMotionUpdates() async {
+  let stream = AsyncThrowingStream<DeviceMotion, any Error>.makeStream(of: DeviceMotion.self)
+  let motionManagerIsLive = LockIsolated(false)
+
+  let store = TestStore(initialState: Feature.State()) {
+    Feature()
+  } withDependencies: {
+    $0.motionManager = .unimplemented(
+      create: { _ in motionManagerIsLive.setValue(true) },
+      destroy: { _ in motionManagerIsLive.setValue(false) },
+      startDeviceMotionUpdates: { _, _, _ in stream.stream },
+      stopDeviceMotionUpdates: { _ in stream.continuation.finish() }
+    )
+  }
+
+  await store.send(.recordingButtonTapped) {
+    $0.isRecording = true
+  }
+  #expect(motionManagerIsLive.value == true)
+
+  await store.send(.recordingButtonTapped) {
+    $0.isRecording = false
+  }
+  await store.finish()
+  #expect(motionManagerIsLive.value == false)
+}
+```
+
+See [MotionTests.swift](./Examples/MotionManager/MotionManagerTests/MotionTests.swift) for full reducer tests that yield `DeviceMotion` values into an `AsyncThrowingStream` and assert derived state.
+
+## API surface
+
+`MotionManager` wraps `CMMotionManager` and provides:
+
+* `create(id:)` and `destroy(id:)`
+* `set(id:...)` for update intervals and movement display settings
+* latest accelerometer, device-motion, gyro, and magnetometer data
+* availability and active-state queries
+* start/stop streams for accelerometer, device motion, gyro, and magnetometer updates
+
+`HeadphoneMotionManager` wraps `CMHeadphoneMotionManager` and provides:
+
+* `create(id:)`, returning an `AsyncStream<HeadphoneMotionManager.Action>` for connect and disconnect delegate events
+* `destroy(id:)`
+* latest headphone device-motion data
+* device-motion availability and active-state queries
+* start/stop streams for headphone device-motion updates
+
+Model types such as `DeviceMotion`, `Attitude`, `AccelerometerData`, `GyroData`, and `MagnetometerData` wrap Core Motion values in test-friendly Swift types.
 
 ## Documentation
 
-The latest documentation for the Composable Core Motion APIs is available [here](https://pointfreeco.github.io/composable-core-motion/).
+API documentation is generated from `Sources/ComposableCoreMotion` by the [Documentation workflow](./.github/workflows/documentation.yml). For usage patterns, start with this README and the [MotionManager example](./Examples/MotionManager).
 
 ## Help
 
-If you want to discuss Composable Core Motion and the Composable Architecture, or have a question about how to use them to solve a particular problem, ask around on [its Swift forum](https://forums.swift.org/c/related-projects/swift-composable-architecture).
+For questions about Composable Core Motion with TCA, use the [Swift forums TCA category](https://forums.swift.org/c/related-projects/swift-composable-architecture).
 
 ## License
 
