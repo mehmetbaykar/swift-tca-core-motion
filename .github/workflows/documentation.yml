@@ -1,29 +1,71 @@
 name: Documentation
+
 on:
   release:
     types:
       - published
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-26
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
+      - name: Print and verify tool versions
+        run: |
+          xcodebuild -version | tee /tmp/xcode-version.txt
+          swift --version | tee /tmp/swift-version.txt
+          grep -q '^Xcode 26\.5$' /tmp/xcode-version.txt
+          grep -q 'Swift version 6\.3' /tmp/swift-version.txt
+
+      - name: Add DocC plugin
+        run: swift package add-dependency https://github.com/swiftlang/swift-docc-plugin --from 1.5.0
+
       - name: Generate Documentation
-        uses: SwiftDocOrg/swift-doc@master
+        run: |
+          swift package --allow-writing-to-directory Documentation \
+            generate-documentation \
+            --target ComposableCoreMotion \
+            --disable-indexing \
+            --output-path Documentation \
+            --transform-for-static-hosting \
+            --hosting-base-path swift-tca-core-motion
+
+      - name: Prepare Documentation for Pages
+        run: |
+          find Documentation -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) \
+            -exec perl -pi -e 's#\{\{BASE_PATH\}\}#/swift-tca-core-motion#g' {} +
+          perl -0pi -e 's#(<script>var baseUrl = "/swift-tca-core-motion/"</script>)#<script>if (location.pathname === "/swift-tca-core-motion/" || location.pathname === "/swift-tca-core-motion/index.html") location.replace("/swift-tca-core-motion/documentation/composablecoremotion/");</script>$1#' Documentation/index.html
+          grep -q '/swift-tca-core-motion/documentation/composablecoremotion/' Documentation/index.html
+          touch Documentation/.nojekyll
+          if grep -R --line-number --fixed-strings '{{BASE_PATH}}' Documentation; then
+            echo "::error::DocC static output still contains {{BASE_PATH}} placeholders."
+            exit 1
+          fi
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
         with:
-          base-url: /composable-core-motion/
-          format: html
-          inputs: Sources/ComposableCoreMotion
-          module-name: ComposableCoreMotion
-          output: Documentation
-      - name: Update Permissions
-        run: 'sudo chown --recursive $USER Documentation'
+          path: Documentation
+
       - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@releases/v3
-        with:
-          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-          BRANCH: gh-pages
-          FOLDER: Documentation
+        id: deployment
+        uses: actions/deploy-pages@v5

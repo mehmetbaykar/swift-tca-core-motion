@@ -192,7 +192,7 @@ Model types such as `DeviceMotion`, `Attitude`, `AccelerometerData`, `GyroData`,
 
 ## Documentation
 
-API documentation is generated from `Sources/ComposableCoreMotion` by the [Documentation workflow](./.github/workflows/documentation.yml). For usage patterns, start with this README and the [MotionManager example](./Examples/MotionManager).
+Generated documentation is published from GitHub releases to <https://mehmetbaykar.github.io/swift-tca-core-motion/>. Source documentation also lives inline under [Sources/ComposableCoreMotion](./Sources/ComposableCoreMotion).
 
 ## Help
 
