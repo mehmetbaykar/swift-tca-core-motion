@@ -4,24 +4,37 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: format-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
-  swift_format:
+  swift-format:
     name: swift-format
     runs-on: macos-26
-    permissions:
-      contents: write
+
     steps:
       - uses: actions/checkout@v5
-      - name: Select Xcode 26.5
+
+      - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
+      - name: Print and verify tool versions
+        run: |
+          xcodebuild -version | tee /tmp/xcode-version.txt
+          swift --version | tee /tmp/swift-version.txt
+          grep -q '^Xcode 26\.5$' /tmp/xcode-version.txt
+          grep -q 'Swift version 6\.3' /tmp/swift-version.txt
+
       - name: Format
         run: make format
-      - uses: stefanzweifel/git-auto-commit-action@v5
+
+      - uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: Run swift-format
-          branch: 'main'
+          branch: main

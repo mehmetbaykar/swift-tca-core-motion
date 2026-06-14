@@ -1,35 +1,36 @@
-PLATFORM_IOS_ID = $(shell xcrun simctl list --json devices available iPhone | jq -r '[.devices | to_entries | sort_by(.key) | reverse | .[].value | select(length > 0) | .[0]][0].udid')
-PLATFORM_IOS = iOS Simulator,id=$(PLATFORM_IOS_ID)
+EXAMPLES_WORKSPACE = Examples/MotionManager.xcworkspace
+XCODEBUILD_FLAGS = -configuration Debug -derivedDataPath Examples/DerivedDataTuist CODE_SIGNING_ALLOWED=NO -quiet
+IOS_SIMULATOR_ID = $(shell xcrun simctl list --json devices available iPhone | jq -r '[.devices | to_entries | sort_by(.key) | reverse | .[].value | select(length > 0) | .[0]][0].udid')
+IOS_SIMULATOR_DESTINATION = platform=iOS Simulator,id=$(IOS_SIMULATOR_ID)
 
 default: test
 
-test: package-test example-test
+test: test-package test-examples
 
-package-test:
+test-package:
 	swift test
 
-example-generate:
-	cd Examples \
-		&& tuist install \
-		&& tuist generate --no-open
+generate-examples:
+	cd Examples && tuist install
+	cd Examples && tuist generate --no-open
 
-example-test: example-generate
-	cd Examples \
-		&& xcodebuild test \
-		-workspace MotionManager.xcworkspace \
+test-examples: generate-examples
+	test -n "$(IOS_SIMULATOR_ID)"
+	test "$(IOS_SIMULATOR_ID)" != "null"
+	xcodebuild test \
+		-workspace "$(EXAMPLES_WORKSPACE)" \
 		-scheme MotionManager \
-		-configuration Debug \
-		-destination "platform=$(PLATFORM_IOS)" \
-		-derivedDataPath DerivedDataTuist \
-		CODE_SIGNING_ALLOWED=NO \
-		-quiet
+		$(XCODEBUILD_FLAGS) \
+		-destination '$(IOS_SIMULATOR_DESTINATION)'
 
 format:
-	find . \
-		-name '*.swift' \
-		-not -path '*/.*' \
-		-not -path './updated-repos/*' \
-		-print0 \
-		| xargs -0 xcrun swift-format --ignore-unparsable-files --in-place
+	swift format --in-place --recursive \
+		./Examples ./Package.swift ./Sources ./Tests
 
-.PHONY: example-generate example-test format package-test test
+.PHONY: \
+	default \
+	format \
+	generate-examples \
+	test \
+	test-examples \
+	test-package

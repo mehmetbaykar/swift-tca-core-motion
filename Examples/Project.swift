@@ -1,5 +1,11 @@
 import ProjectDescription
 
+let swiftSettings: Settings = .settings(
+  base: [
+    "SWIFT_VERSION": "6.0"
+  ]
+)
+
 let project = Project(
   name: "MotionManager",
   targets: [
@@ -19,6 +25,7 @@ let project = Project(
         base: [
           "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
           "PRODUCT_MODULE_NAME": "MotionManagerDemo",
+          "SWIFT_VERSION": "6.0",
           "TARGETED_DEVICE_FAMILY": "1,2",
         ]
       )
@@ -33,7 +40,8 @@ let project = Project(
       sources: ["MotionManager/MotionManagerTests/**/*.swift"],
       dependencies: [
         .target(name: "MotionManager")
-      ]
+      ],
+      settings: swiftSettings
     ),
   ]
 )
