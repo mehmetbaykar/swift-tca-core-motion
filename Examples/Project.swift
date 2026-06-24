@@ -14,7 +14,7 @@ let project = Project(
       destinations: [.iPhone, .iPad],
       product: .app,
       bundleId: "co.pointfree.MotionManager",
-      deploymentTargets: .iOS("16.0"),
+      deploymentTargets: .iOS("17.0"),
       infoPlist: .file(path: "MotionManager/MotionManager/Info.plist"),
       sources: ["MotionManager/MotionManager/**/*.swift"],
       resources: ["MotionManager/MotionManager/Assets.xcassets"],
@@ -23,7 +23,6 @@ let project = Project(
       ],
       settings: .settings(
         base: [
-          "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
           "PRODUCT_MODULE_NAME": "MotionManagerDemo",
           "SWIFT_VERSION": "6.0",
           "TARGETED_DEVICE_FAMILY": "1,2",
@@ -35,7 +34,7 @@ let project = Project(
       destinations: [.iPhone, .iPad],
       product: .unitTests,
       bundleId: "co.pointfree.MotionManagerTests",
-      deploymentTargets: .iOS("16.0"),
+      deploymentTargets: .iOS("17.0"),
       infoPlist: .file(path: "MotionManager/MotionManagerTests/Info.plist"),
       sources: ["MotionManager/MotionManagerTests/**/*.swift"],
       dependencies: [
