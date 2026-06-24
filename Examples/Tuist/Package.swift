@@ -14,7 +14,20 @@ import PackageDescription
 
 let package = Package(
   name: "MotionManagerDependencies",
+  platforms: [
+    .iOS(.v16),
+    .macOS(.v13),
+    .watchOS(.v9),
+  ],
   dependencies: [
     .package(path: "../..")
+  ],
+  targets: [
+    .target(
+      name: "MotionManagerDependencies",
+      dependencies: [
+        .product(name: "ComposableCoreMotion", package: "swift-tca-core-motion")
+      ]
+    )
   ]
 )
