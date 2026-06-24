@@ -1,6 +1,7 @@
 # Composable Core Motion
 
 [![CI](https://github.com/mehmetbaykar/swift-tca-core-motion/actions/workflows/ci.yml/badge.svg)](https://github.com/mehmetbaykar/swift-tca-core-motion/actions/workflows/ci.yml)
+[![Swift 6.3](https://img.shields.io/badge/Swift-6.3-orange.svg)](https://www.swift.org)
 
 Composable Core Motion bridges Apple's [Core Motion](https://developer.apple.com/documentation/coremotion) APIs into [the Composable Architecture](https://github.com/pointfreeco/swift-composable-architecture). It exposes motion managers as TCA dependencies with async operations, async streams, live implementations, and controllable test values.
 
