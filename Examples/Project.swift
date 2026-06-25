@@ -23,6 +23,7 @@ let project = Project(
       ],
       settings: .settings(
         base: [
+          "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
           "PRODUCT_MODULE_NAME": "MotionManagerDemo",
           "SWIFT_VERSION": "6.0",
           "TARGETED_DEVICE_FAMILY": "1,2",
